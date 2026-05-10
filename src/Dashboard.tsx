@@ -28,7 +28,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeBloodReport } from './services/geminiService';
 import { AnalysisResult, HealthReport } from './types';
-import { handleFirestoreError, OperationType } from './lib/firestore-errors';
+import { handleFirestoreError, OperationType } from './firestore-errors';
 
 export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [reports, setReports] = useState<HealthReport[]>([]);
@@ -80,45 +80,29 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('report', file);
+      // Helper function to convert file to base64
+      const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => {
+            const base64String = (reader.result as string).split(',')[1];
+            resolve(base64String);
+          };
+          reader.onerror = error => reject(error);
+        });
+      };
 
-      const extractResponse = await fetch('/api/extract-pdf', {
-        method: 'POST',
-        body: formData,
+      const base64Data = await fileToBase64(file);
+      const analysis = await analyzeBloodReport({
+        data: base64Data,
+        mimeType: file.type
       });
-
-      if (!extractResponse.ok) {
-        const contentType = extractResponse.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await extractResponse.json();
-          throw new Error(errorData.error || `Server error (${extractResponse.status})`);
-        } else {
-          const errorText = await extractResponse.text();
-          throw new Error(`Extraction failed (${extractResponse.status}): ${errorText.substring(0, 100)}`);
-        }
-      }
-      
-      const contentType = extractResponse.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const bodyText = await extractResponse.text();
-        console.error('Expected JSON but received:', bodyText.substring(0, 500));
-        throw new Error('Server returned HTML instead of JSON. This usually means the server route is not found or crashed.');
-      }
-
-      const responseData = await extractResponse.json();
-      const text = responseData.text;
-      
-      if (!text || text.trim().length < 50) {
-        throw new Error('Could not find enough text in the report to analyze.');
-      }
-
-      const analysis = await analyzeBloodReport(text);
 
       const reportData = {
         userId: auth.currentUser?.uid,
         fileName: file.name,
-        extractedText: text.substring(0, 5000), // Limit storage
+        extractedText: "Analyzed via direct PDF upload.", 
         analysis,
         createdAt: new Date().toISOString(),
       };

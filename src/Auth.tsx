@@ -10,7 +10,7 @@ import { auth, db } from './firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { motion } from 'motion/react';
 import { Activity, Mail, Lock, User, Loader2, LogIn, UserPlus, AlertCircle } from 'lucide-react';
-import { handleFirestoreError, OperationType } from './lib/firestore-errors';
+import { handleFirestoreError, OperationType } from './firestore-errors';
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);

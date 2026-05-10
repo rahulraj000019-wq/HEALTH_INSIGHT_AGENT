@@ -13,19 +13,25 @@ function getAI() {
   return aiInstance;
 }
 
-export async function analyzeBloodReport(text: string) {
+export async function analyzeBloodReport(input: string | { data: string, mimeType: string }) {
   const ai = getAI();
-  const prompt = `Analyze the following blood test report text and provide a simplified explanation for a non-medical user.
+  const prompt = `Analyze the following blood test report and provide a simplified explanation for a non-medical user.
   Extract the key parameters, their values, units, reference ranges, and determine if they are normal, abnormal, or concerning.
   Provide a brief, simple explanation for each parameter.
-  Finally, provide a summary and general lifestyle recommendations (with a strong disclaimer that this is NOT a medical diagnosis and the user MUST consult a doctor).
+  Finally, provide a summary and general lifestyle recommendations (with a strong disclaimer that this is NOT a medical diagnosis and the user MUST consult a doctor).`;
 
-  REPORT TEXT:
-  ${text}`;
+  const contents = typeof input === 'string' 
+    ? { parts: [{ text: prompt }, { text: input }] }
+    : {
+        parts: [
+          { text: prompt },
+          { inlineData: input }
+        ]
+      };
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: prompt,
+    contents,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
