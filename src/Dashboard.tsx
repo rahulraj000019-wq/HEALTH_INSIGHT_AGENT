@@ -22,13 +22,13 @@ import {
   orderBy, 
   getDocs, 
   addDoc, 
-  serverTimestamp,
   doc,
   getDoc
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeBloodReport } from './services/geminiService';
 import { AnalysisResult, HealthReport } from './types';
+import { handleFirestoreError, OperationType } from './lib/firestore-errors';
 
 export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [reports, setReports] = useState<HealthReport[]>([]);
@@ -57,7 +57,11 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
       setReports(fetchedReports);
     } catch (err) {
       console.error('Error fetching reports:', err);
-      setError('Failed to load reports history.');
+      try {
+        handleFirestoreError(err, OperationType.LIST, 'reports');
+      } catch (e: any) {
+        setError(e.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -119,7 +123,14 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         createdAt: new Date().toISOString(),
       };
 
-      const docRef = await addDoc(collection(db, 'reports'), reportData);
+      let docRef;
+      try {
+        docRef = await addDoc(collection(db, 'reports'), reportData);
+      } catch (dbErr) {
+        handleFirestoreError(dbErr, OperationType.CREATE, 'reports');
+        throw dbErr; // Should not reach here because handleFirestoreError throws
+      }
+      
       const newReport = { id: docRef.id, ...reportData } as HealthReport;
       
       setReports([newReport, ...reports]);

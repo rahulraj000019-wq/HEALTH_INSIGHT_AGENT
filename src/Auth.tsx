@@ -7,9 +7,10 @@ import {
   GoogleAuthProvider
 } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { motion } from 'motion/react';
-import { Activity, Mail, Lock, User, Loader2, LogIn, UserPlus } from 'lucide-react';
+import { Activity, Mail, Lock, User, Loader2, LogIn, UserPlus, AlertCircle } from 'lucide-react';
+import { handleFirestoreError, OperationType } from './lib/firestore-errors';
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -33,12 +34,16 @@ export default function Auth() {
         
         await updateProfile(user, { displayName: name });
         
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          email: user.email,
-          displayName: name,
-          createdAt: new Date().toISOString(),
-        });
+        try {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            email: user.email,
+            displayName: name,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (dbErr) {
+          handleFirestoreError(dbErr, OperationType.WRITE, `users/${user.uid}`);
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -54,12 +59,16 @@ export default function Auth() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        createdAt: new Date().toISOString(),
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          createdAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (dbErr) {
+        handleFirestoreError(dbErr, OperationType.WRITE, `users/${user.uid}`);
+      }
     } catch (err: any) {
       console.error(err);
       setError('Google Sign-In failed');
@@ -183,26 +192,5 @@ export default function Auth() {
         </div>
       </motion.div>
     </div>
-  );
-}
-
-function AlertCircle(props: any) {
-  return (
-    <svg 
-      {...props} 
-      xmlns="http://www.w3.org/2000/svg" 
-      width="24" 
-      height="24" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
   );
 }

@@ -1,10 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Default deny catch-all
     match /{document=**} {
       allow read, write: if false;
     }
 
+    // --- Helpers ---
     function isSignedIn() {
       return request.auth != null;
     }
@@ -17,16 +19,45 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- User Profiles ---
+    function isValidUserProfile(data) {
+      return data.uid == request.auth.uid &&
+             data.email is string && data.email.size() < 256 &&
+             data.displayName is string && data.displayName.size() < 100 &&
+             data.createdAt is string; // or timestamp if using serverTimestamp
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.keys().hasAll(['uid', 'email', 'createdAt']) && request.resource.data.keys().size() == 4;
-      allow update: if isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+      allow create: if isOwner(userId) && isValidUserProfile(incoming()) && incoming().keys().size() == 4;
+      allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']);
+    }
+
+    // --- Health Reports ---
+    function isValidHealthReport(data) {
+      return data.userId == request.auth.uid &&
+             data.fileName is string && data.fileName.size() <= 256 &&
+             data.analysis is map &&
+             data.createdAt is string;
     }
 
     match /reports/{reportId} {
+      // Secure list and get
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && isValidId(reportId);
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Secure creation
+      allow create: if isValidId(reportId) && isValidHealthReport(incoming());
+      
+      // Secure deletion
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
   }
 }

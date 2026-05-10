@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const pdfreaderModule = require('pdfreader');
+const pdfExtract = require('pdf-extraction');
 
 dotenv.config();
 
@@ -34,29 +34,16 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Helper function for pdfreader with coordinate-based sorting
-  async function extractTextWithPdfReader(buffer: Buffer): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const rows: Record<number, any[]> = {};
-      new pdfreaderModule.PdfReader().parseBuffer(buffer, (err: any, item: any) => {
-        if (err) {
-          reject(err);
-        } else if (!item) {
-          // End of file: sort rows by Y then items by X
-          const sortedY = Object.keys(rows).map(Number).sort((a, b) => a - b);
-          let fullText = '';
-          for (const y of sortedY) {
-            const rowItems = rows[y].sort((a, b) => a.x - b.x);
-            fullText += rowItems.map(i => i.text).join(' ') + '\n';
-          }
-          resolve(fullText);
-        } else if (item.text) {
-          const y = Math.round(item.y * 100) / 100; // Snap to 0.01 for better grouping
-          if (!rows[y]) rows[y] = [];
-          rows[y].push(item);
-        }
-      });
-    });
+  // Helper function for pdf-extraction
+  async function extractTextWithPdfParse(buffer: Buffer): Promise<string> {
+    try {
+      console.log('Using pdf-extraction...');
+      const data = await pdfExtract(buffer);
+      return data.text;
+    } catch (err) {
+      console.error('Extraction implementation error:', err);
+      throw err;
+    }
   }
 
 // @ts-ignore
@@ -67,10 +54,10 @@ async function startServer() {
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      console.log('Extracting text from PDF using pdfreader, size:', req.file.size);
+      console.log('Extracting text from PDF using pdf-extraction, size:', req.file.size);
       
       try {
-        const text = await extractTextWithPdfReader(req.file.buffer);
+        const text = await extractTextWithPdfParse(req.file.buffer);
         console.log('Extraction successful, text length:', text.length);
         
         if (!text || text.trim().length === 0) {
@@ -79,7 +66,7 @@ async function startServer() {
         
         res.json({ text });
       } catch (parseError: any) {
-        console.error('Internal PDF extraction error (pdfreader):', parseError);
+        console.error('Internal PDF extraction error (pdf-extraction):', parseError);
         res.status(422).json({ 
           error: `Could not read this PDF: ${parseError.message || 'Unknown error'}.`,
           details: parseError.message
