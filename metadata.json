@@ -1,0 +1,6 @@
+{
+  "name": "Health Insights Agent (HIA)",
+  "description": "AI-powered blood test analyzer that simplifies complex medical reports into easy-to-understand health insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
