@@ -26,8 +26,18 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, HealthReport } from './types';
 import { handleFirestoreError, OperationType } from './firestore-errors';
+
+// Initialize Gemini on the client
+const getAI = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not defined. Please check your project settings.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [reports, setReports] = useState<HealthReport[]>([]);
@@ -94,23 +104,62 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       const base64Data = await fileToBase64(file);
       
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const ai = getAI();
+      const prompt = `Analyze the following blood test report and provide a simplified explanation for a non-medical user.
+      Extract the key parameters, their values, units, reference ranges, and determine if they are normal, abnormal, or concerning.
+      Provide a brief, simple explanation for each parameter.
+      Finally, provide a summary and general lifestyle recommendations (with a strong disclaimer that this is NOT a medical diagnosis and the user MUST consult a doctor).`;
+
+      console.log('Analyzing report with Gemini 3 Flash...');
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          parts: [
+            { text: prompt },
+            { inlineData: { data: base64Data, mimeType: file.type } }
+          ]
         },
-        body: JSON.stringify({
-          data: base64Data,
-          mimeType: file.type
-        })
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            required: ["summary", "parameters", "recommendations", "disclaimer"],
+            properties: {
+              summary: { type: Type.STRING },
+              parameters: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  required: ["name", "value", "unit", "range", "status", "explanation"],
+                  properties: {
+                    name: { type: Type.STRING },
+                    value: { type: Type.STRING },
+                    unit: { type: Type.STRING },
+                    range: { type: Type.STRING },
+                    status: { 
+                      type: Type.STRING, 
+                      enum: ["normal", "abnormal", "concerning", "unknown"] 
+                    },
+                    explanation: { type: Type.STRING }
+                  }
+                }
+              },
+              recommendations: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              },
+              disclaimer: { type: Type.STRING }
+            }
+          }
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze report.');
+      const resultText = response.text;
+      if (!resultText) {
+        throw new Error("AI failed to generate a response text.");
       }
 
-      const analysis = await response.json();
+      const analysis = JSON.parse(resultText) as AnalysisResult;
 
       const reportData = {
         userId: auth.currentUser?.uid,
