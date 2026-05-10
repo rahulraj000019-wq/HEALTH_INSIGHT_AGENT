@@ -3,10 +3,25 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { GoogleGenAI, Type } from "@google/genai";
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Initialize Gemini on the server where API key is accessible
+let aiInstance: GoogleGenAI | null = null;
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) {
+      console.error('GEMINI_API_KEY is missing from environment variables');
+      throw new Error("GEMINI_API_KEY is not defined");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+}
 
 async function startServer() {
   const app = express();
@@ -29,6 +44,80 @@ async function startServer() {
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Gemini Analysis Endpoint
+  app.post('/api/analyze', async (req: any, res: any) => {
+    try {
+      const { data, mimeType } = req.body;
+      if (!data) return res.status(400).json({ error: 'No data provided' });
+
+      console.log('Analyzing report with Gemini 1.5 Flash...');
+      const ai = getAI();
+      const prompt = `Analyze the following blood test report and provide a simplified explanation for a non-medical user.
+      Extract the key parameters, their values, units, reference ranges, and determine if they are normal, abnormal, or concerning.
+      Provide a brief, simple explanation for each parameter.
+      Finally, provide a summary and general lifestyle recommendations (with a strong disclaimer that this is NOT a medical diagnosis and the user MUST consult a doctor).`;
+
+      const contents = {
+        parts: [
+          { text: prompt },
+          { inlineData: { data, mimeType: mimeType || 'application/pdf' } }
+        ]
+      };
+
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            required: ["summary", "parameters", "recommendations", "disclaimer"],
+            properties: {
+              summary: { type: Type.STRING },
+              parameters: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  required: ["name", "value", "unit", "range", "status", "explanation"],
+                  properties: {
+                    name: { type: Type.STRING },
+                    value: { type: Type.STRING },
+                    unit: { type: Type.STRING },
+                    range: { type: Type.STRING },
+                    status: { 
+                      type: Type.STRING, 
+                      enum: ["normal", "abnormal", "concerning", "unknown"] 
+                    },
+                    explanation: { type: Type.STRING }
+                  }
+                }
+              },
+              recommendations: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              },
+              disclaimer: { type: Type.STRING }
+            }
+          }
+        }
+      });
+
+      const resultText = response.text || "";
+      const cleanedText = resultText.replace(/^```json/, '').replace(/```$/, '').trim();
+      
+      try {
+        const result = JSON.parse(cleanedText);
+        res.json(result);
+      } catch (parseErr) {
+        console.error('Failed to parse Gemini JSON:', cleanedText);
+        res.status(500).json({ error: 'AI response was not in valid JSON format' });
+      }
+    } catch (error: any) {
+      console.error('Analysis error:', error);
+      res.status(500).json({ error: error.message || 'Error during analysis' });
+    }
   });
 
   // Vite middleware for development

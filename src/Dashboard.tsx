@@ -26,7 +26,6 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { analyzeBloodReport } from './services/geminiService';
 import { AnalysisResult, HealthReport } from './types';
 import { handleFirestoreError, OperationType } from './firestore-errors';
 
@@ -95,10 +94,23 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       const base64Data = await fileToBase64(file);
       
-      const analysis = await analyzeBloodReport({
-        data: base64Data,
-        mimeType: file.type
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: base64Data,
+          mimeType: file.type
+        })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to analyze report.');
+      }
+
+      const analysis = await response.json();
 
       const reportData = {
         userId: auth.currentUser?.uid,
