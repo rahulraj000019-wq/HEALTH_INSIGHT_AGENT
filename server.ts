@@ -16,11 +16,15 @@ async function startServer() {
   
   // Request logger
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+    });
     next();
   });
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
 
   // Health check
   app.get('/api/health', (req, res) => {

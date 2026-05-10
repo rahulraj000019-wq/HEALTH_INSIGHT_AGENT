@@ -94,6 +94,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
       };
 
       const base64Data = await fileToBase64(file);
+      
       const analysis = await analyzeBloodReport({
         data: base64Data,
         mimeType: file.type
@@ -112,7 +113,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         docRef = await addDoc(collection(db, 'reports'), reportData);
       } catch (dbErr) {
         handleFirestoreError(dbErr, OperationType.CREATE, 'reports');
-        throw dbErr; // Should not reach here because handleFirestoreError throws
+        throw dbErr;
       }
       
       const newReport = { id: docRef.id, ...reportData } as HealthReport;
@@ -121,7 +122,11 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
       setSelectedReport(newReport);
     } catch (err: any) {
       console.error('Analysis error:', err);
-      setError(err.message || 'An error occurred during analysis.');
+      let msg = err.message || 'An error occurred during analysis.';
+      if (msg.includes('API key not valid')) {
+        msg = 'Gemini API key is invalid. Please check your environment variables or project settings.';
+      }
+      setError(msg);
     } finally {
       setAnalyzing(false);
     }
