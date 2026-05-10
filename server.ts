@@ -38,7 +38,22 @@ async function startServer() {
   async function extractTextWithPdfParse(buffer: Buffer): Promise<string> {
     try {
       console.log('Using pdf-extraction...');
-      const data = await pdfExtract(buffer);
+      let parseFn = pdfExtract;
+      if (typeof parseFn !== 'function' && pdfExtract && typeof pdfExtract.default === 'function') {
+        parseFn = pdfExtract.default;
+      }
+      
+      if (typeof parseFn !== 'function') {
+        // Log keys to help debugging if it fails again
+        console.error('pdfExtract structure:', {
+          type: typeof pdfExtract,
+          keys: pdfExtract ? Object.keys(pdfExtract) : 'null/undefined',
+          isDefaultFunction: pdfExtract && typeof pdfExtract.default === 'function'
+        });
+        throw new Error('pdf-extraction is not a function');
+      }
+
+      const data = await parseFn(buffer);
       return data.text;
     } catch (err) {
       console.error('Extraction implementation error:', err);
